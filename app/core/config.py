@@ -82,6 +82,26 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: list = ["*"]
 
+    # Dashboard runtime storage
+    DASHBOARD_DATA_DIR: str = str(Path(__file__).resolve().parents[2] / "data")
+    DASHBOARD_ASSET_DIR: Optional[str] = None
+
+    # PostgreSQL dashboard persistence. DATABASE_URL wins when defined.
+    # POSTGRES_* mirrors the existing Django backend configuration.
+    DATABASE_URL: Optional[str] = None
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5433
+    POSTGRES_USER: str = "Afroza_Solidarity_user"
+    POSTGRES_PASSWORD: Optional[str] = "Afroza_Solidarity_password"
+    POSTGRES_DB: str = "Afroza_Solidarity_db"
+
+    # Compatibility aliases for old external env files.
+    DB_HOST: Optional[str] = None
+    DB_PORT: Optional[int] = None
+    DB_USER: Optional[str] = None
+    DB_PASSWORD: Optional[str] = None
+    DB_NAME: Optional[str] = None
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def _coerce_debug(cls, value):

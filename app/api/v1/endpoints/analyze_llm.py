@@ -13,6 +13,8 @@ from app.services.liveness_checker import LivenessChecker
 from app.infrastructure.external.aws_liveness import AWSLiveness
 from app.infrastructure.external.llm_factory import get_llm_router
 from app.core.config import settings
+from app.services.dashboard_events import dashboard_events
+from app.services.kyc_dashboard_store import get_kyc_dashboard_store
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -95,21 +97,104 @@ def _validate_base64(value: str, field_name: str) -> str:
     return value
 
 
-async def _run_kyc(request: KYCAnalyzeRequest) -> KYCAnalyzeResponse:
+def _dashboard_event_payload(record: dict) -> Dict[str, Any]:
+    return {
+        "id": record.get("id"),
+        "user_id": record.get("user_id"),
+        "status": record.get("status"),
+        "decision": record.get("decision"),
+        "recommendation": record.get("recommendation"),
+        "kyc_score": record.get("kyc_score"),
+        "valid": record.get("valid"),
+        "reason": record.get("reason"),
+        "error": record.get("error"),
+    }
+
+
+async def _create_dashboard_record(
+    request: KYCAnalyzeRequest,
+    *,
+    source: str,
+    filenames: Optional[Dict[str, str]] = None,
+    content_types: Optional[Dict[str, str]] = None,
+) -> str:
+    store = get_kyc_dashboard_store()
+    metadata = request.metadata.model_dump(mode="json")
+    metadata["source"] = source
+    record = store.create_request(
+        user_id=request.user_id,
+        source=source,
+        metadata=metadata,
+    )
+    request_id = record["id"]
+    filenames = filenames or {}
+    content_types = content_types or {}
+
+    for kind, value in (
+        ("document_front", request.document_front),
+        ("document_back", request.document_back),
+        ("selfie", request.selfie),
+        ("mrz_face", request.mrz_face),
+    ):
+        if value:
+            store.add_asset_base64(
+                request_id=request_id,
+                kind=kind,
+                image_base64=value,
+                filename=filenames.get(kind),
+                content_type=content_types.get(kind),
+            )
+
+    event = store.add_event(
+        request_id=request_id,
+        event_type="created",
+        payload=_dashboard_event_payload(record),
+    )
+    await dashboard_events.broadcast(event)
+    return request_id
+
+
+async def _mark_dashboard_failed(request_id: Optional[str], error: str) -> None:
+    if not request_id:
+        return
+    store = get_kyc_dashboard_store()
+    record = store.mark_failed(request_id, error)
+    event = store.add_event(
+        request_id=request_id,
+        event_type="failed",
+        payload=_dashboard_event_payload(record),
+    )
+    await dashboard_events.broadcast(event)
+
+
+async def _run_kyc(request: KYCAnalyzeRequest, *, request_id: Optional[str] = None) -> KYCAnalyzeResponse:
     """Exécute l'analyse KYC avec timeout — partagé par les deux endpoints."""
     try:
         result = await asyncio.wait_for(
             kyc_orchestrator.analyze_kyc(request),
             timeout=settings.KYC_ANALYZE_TIMEOUT
         )
+        if request_id:
+            store = get_kyc_dashboard_store()
+            record = store.mark_completed(request_id, result)
+            event = store.add_event(
+                request_id=request_id,
+                event_type="completed",
+                payload=_dashboard_event_payload(record),
+            )
+            await dashboard_events.broadcast(event)
         logger.info(f"  KYC terminé — user: {request.user_id} — status: {result.status}")
-        return KYCAnalyzeResponse(success=True, error=None, data=result)
+        return KYCAnalyzeResponse(success=True, request_id=request_id, error=None, data=result)
     except asyncio.TimeoutError:
         logger.error(f"  Timeout KYC — user: {request.user_id} ({settings.KYC_ANALYZE_TIMEOUT}s)")
+        await _mark_dashboard_failed(request_id, f"Analyse KYC timeout après {settings.KYC_ANALYZE_TIMEOUT}s")
         raise HTTPException(
             status_code=504,
             detail=f"Analyse KYC timeout après {settings.KYC_ANALYZE_TIMEOUT}s"
         )
+    except Exception as exc:
+        await _mark_dashboard_failed(request_id, str(exc))
+        raise
 
 
 # ─────────────────────────────────────────────
@@ -132,7 +217,8 @@ async def analyze_kyc_json(request: KYCAnalyzeRequest) -> KYCAnalyzeResponse:
         request.selfie = _validate_base64(request.selfie, "selfie")
         if request.mrz_face:
             request.mrz_face = _validate_base64(request.mrz_face, "mrz_face")
-        return await _run_kyc(request)
+        request_id = await _create_dashboard_record(request, source="json")
+        return await _run_kyc(request, request_id=request_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -183,7 +269,23 @@ async def analyze_kyc_upload(
                 app_version=app_version
             )
         )
-        return await _run_kyc(request)
+        request_id = await _create_dashboard_record(
+            request,
+            source="upload",
+            filenames={
+                "document_front": document_front.filename,
+                "document_back": document_back.filename if document_back else "",
+                "selfie": selfie.filename,
+                "mrz_face": mrz_face.filename if mrz_face else "",
+            },
+            content_types={
+                "document_front": document_front.content_type or "",
+                "document_back": document_back.content_type if document_back else "",
+                "selfie": selfie.content_type or "",
+                "mrz_face": mrz_face.content_type if mrz_face else "",
+            },
+        )
+        return await _run_kyc(request, request_id=request_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:

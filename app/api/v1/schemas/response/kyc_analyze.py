@@ -8,6 +8,7 @@ class KYCAnalyzeResponse(BaseModel):
     """Réponse KYC de Simba KYC."""
     
     success: bool = Field(..., description="Succès de l'opération")
+    request_id: Optional[str] = Field(None, description="Identifiant dashboard temps reel de la demande KYC")
     data: Optional[KYCResult] = Field(None, description="Résultat du KYC")
     error: Optional[str] = Field(None, description="Message d'erreur si applicable")
     

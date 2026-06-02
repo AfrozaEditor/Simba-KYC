@@ -34,8 +34,7 @@ Thumbs.db
 # Project specific
 .env.local
 .env.production
-*.db
-*.sqlite
+data/
 *.pyc
 *.pt
 *.pt

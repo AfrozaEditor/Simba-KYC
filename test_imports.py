@@ -2,7 +2,7 @@ import importlib
 
 modules = [
     'aiohttp', 'numpy', 'cv2', 'PIL', 'zxingcpp',
-    'pydantic', 'pydantic_settings', 'dotenv', 'boto3'
+    'pydantic', 'pydantic_settings', 'dotenv', 'boto3', 'psycopg'
 ]
 
 for module in modules:

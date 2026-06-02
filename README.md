@@ -25,6 +25,11 @@ Le service ne depend pas d'Afroza, Phoenix, Django ou d'une base de donnees appl
 | `POST` | `/api/v1/liveness/spoof` | Detection de spoofing |
 | `POST` | `/api/v1/faces/compare` | Comparaison selfie/document |
 | `POST` | `/api/v1/faces/compare/upload` | Comparaison selfie/document en upload |
+| `GET` | `/dashboard` | Dashboard web KYC |
+| `GET` | `/api/v1/dashboard/requests` | Liste des demandes KYC |
+| `GET` | `/api/v1/dashboard/requests/{request_id}` | Detail d'une demande KYC |
+| `POST` | `/api/v1/dashboard/requests/{request_id}/decision` | Decision manuelle |
+| `WS` | `/api/v1/dashboard/ws?api_key=...` | Evenements temps reel |
 | `GET` | `/health` | Liveness probe |
 | `GET` | `/ready` | Readiness probe |
 
@@ -49,6 +54,42 @@ ALLOW_ANONYMOUS=false
 `LLM_PREFER_PROVIDER` et `LLM_FALLBACK_CHAIN` doivent rester centres sur `groq`; les providers locaux LLaVA/Ollama ne font plus partie du microservice KYC cible.
 
 `LIVENESS_PROVIDER` doit rester `aws`. Les pipelines locaux YOLO/DeepFace ont ete retires de ce microservice.
+
+## Dashboard et persistance PostgreSQL
+
+Le dashboard utilise PostgreSQL, avec les memes variables que le backend Django Afroza:
+
+```env
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_USER=Afroza_Solidarity_user
+POSTGRES_PASSWORD=Afroza_Solidarity_password
+POSTGRES_DB=Afroza_Solidarity_db
+```
+
+`DATABASE_URL` peut etre utilise a la place si le deploiement fournit une URL PostgreSQL complete.
+
+Les tables creees automatiquement sont prefixees `simba_kyc_`:
+
+- `simba_kyc_requests`
+- `simba_kyc_assets`
+- `simba_kyc_events`
+
+Les fichiers image uploades restent sur disque dans `DASHBOARD_DATA_DIR/assets` afin de ne pas gonfler la base PostgreSQL avec des blobs. Le chemin `data/` est ignore par Git.
+
+Chaque analyse `/api/v1/kyc/analyze` ou `/api/v1/kyc/analyze/upload` retourne un `request_id`. Les clients peuvent utiliser cet identifiant pour suivre l'etat de la demande dans le dashboard ou via WebSocket.
+
+Exemple WebSocket:
+
+```text
+ws://localhost:8001/api/v1/dashboard/ws?api_key=<API_KEY>
+```
+
+Pour suivre une seule demande:
+
+```text
+ws://localhost:8001/api/v1/dashboard/ws?api_key=<API_KEY>&request_id=<request_id>
+```
 
 ## Authentification API
 

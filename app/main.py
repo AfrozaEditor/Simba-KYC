@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
-from app.api.v1.endpoints import health, ready, analyze_llm
+from app.api.v1.endpoints import health, ready, analyze_llm, dashboard
 
 # Configuration du logging
 logging.basicConfig(
@@ -24,8 +24,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if request.url.path in ["/health", "/ready"]:
             return await call_next(request)
         
-        # Les endpoints racinaires ne requièrent pas la clé API
-        if request.url.path == "/":
+        # Les endpoints racinaires et le shell dashboard ne requièrent pas la clé API.
+        # Les appels data du dashboard restent protégés par /api/v1/dashboard/*.
+        if request.url.path in ["/", "/dashboard"]:
             return await call_next(request)
         
         # Les endpoints docs ne requièrent pas la clé API quand ils sont exposés.
@@ -100,6 +101,11 @@ app.include_router(
     analyze_llm.router,
     prefix="/api/v1",
     tags=["KYC"]
+)
+
+app.include_router(
+    dashboard.router,
+    tags=["Dashboard"]
 )
 
 # Routes de test/info
