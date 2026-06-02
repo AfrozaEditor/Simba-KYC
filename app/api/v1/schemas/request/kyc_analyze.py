@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
 
 
@@ -10,6 +10,10 @@ class KYCMetadata(BaseModel):
     ip_address: str = Field(..., description="Adresse IP du client")
     timestamp: datetime = Field(..., description="Timestamp ISO8601")
     app_version: str = Field(..., description="Version de l'app client")
+    mobile_money_identity: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Identité Mobile Money opérateur récupérée par le backend appelant.",
+    )
 
 
 class KYCAnalyzeRequest(BaseModel):

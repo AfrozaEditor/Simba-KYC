@@ -1,11 +1,13 @@
 """Application FastAPI principale pour Simba KYC."""
 
 import logging
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.config import settings
 from app.api.v1.endpoints import health, ready, analyze_llm, dashboard
+from app.services.dashboard_auth_store import get_dashboard_auth_store
 
 # Configuration du logging
 logging.basicConfig(
@@ -18,15 +20,19 @@ logger = logging.getLogger(__name__)
 # Middleware d'authentification par clé API
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware pour valider la clé API"""
+
+    PUBLIC_PATHS = {
+        "/",
+        "/health",
+        "/ready",
+        "/dashboard",
+        "/dashboard/auth/github",
+        "/dashboard/auth/github/callback",
+        "/dashboard/logout",
+    }
     
     async def dispatch(self, request: Request, call_next):
-        # Les endpoints de santé (health, ready) ne requièrent pas la clé API
-        if request.url.path in ["/health", "/ready"]:
-            return await call_next(request)
-        
-        # Les endpoints racinaires et le shell dashboard ne requièrent pas la clé API.
-        # Les appels data du dashboard restent protégés par /api/v1/dashboard/*.
-        if request.url.path in ["/", "/dashboard"]:
+        if request.url.path in self.PUBLIC_PATHS:
             return await call_next(request)
         
         # Les endpoints docs ne requièrent pas la clé API quand ils sont exposés.
@@ -41,12 +47,18 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if settings.ALLOW_ANONYMOUS:
             return await call_next(request)
         
-        # Sinon, requiert une clé API valide
+        auth_store = get_dashboard_auth_store()
+
+        if request.url.path.startswith("/api/v1/dashboard/"):
+            session_token = request.cookies.get(settings.DASHBOARD_COOKIE_NAME)
+            if auth_store.get_user_by_session_token(session_token):
+                return await call_next(request)
+
         api_key = request.headers.get("X-API-Key")
-        if not api_key or api_key != settings.API_KEY:
-            raise HTTPException(
+        if not auth_store.validate_api_key(api_key):
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="API Key manquante ou invalide"
+                content={"detail": "API Key manquante ou invalide"},
             )
         
         return await call_next(request)

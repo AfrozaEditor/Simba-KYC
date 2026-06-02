@@ -188,6 +188,10 @@ class KYCOrchestrator:
                 kyc_data=kyc_data,
                 qr_analysis=qr_analysis,
                 mrz_analysis=mrz_analysis,
+                mobile_money_identity=self._metadata_value(
+                    request.metadata,
+                    "mobile_money_identity",
+                ),
             )
 
             qr_identity = self._build_source_identity(qr_analysis)
@@ -390,6 +394,7 @@ class KYCOrchestrator:
         kyc_data: Optional[KYCData],
         qr_analysis: Optional[Dict[str, Any]],
         mrz_analysis: Optional[Dict[str, Any]],
+        mobile_money_identity: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         checks: Dict[str, Any] = {}
 
@@ -421,7 +426,75 @@ class KYCOrchestrator:
                 unavailable_reason=(mrz_analysis or {}).get("error"),
             )
 
+        checks["ocr_vs_mobile_money"] = self._compare_mobile_money_source(
+            ocr_data=kyc_data,
+            mobile_money_identity=mobile_money_identity,
+        )
+
         return checks
+
+    def _compare_mobile_money_source(
+        self,
+        *,
+        ocr_data: Optional[KYCData],
+        mobile_money_identity: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not mobile_money_identity:
+            return {
+                "source": "mobile_money",
+                "status": "not_available",
+                "message": "Identité Mobile Money non fournie.",
+                "checked_fields": [],
+                "field_issues": [],
+            }
+
+        mobile_money_full_name = self._normalize_text(
+            str(mobile_money_identity.get("mobile_money_full_name") or mobile_money_identity.get("full_name") or "")
+        )
+        if ocr_data is None:
+            return {
+                "source": "mobile_money",
+                "status": "not_available",
+                "message": "OCR indisponible pour comparaison Mobile Money.",
+                "checked_fields": [],
+                "field_issues": [],
+            }
+
+        ocr_full_name = self._normalize_text(self._build_full_name_from_ocr(ocr_data))
+        if not ocr_full_name or not mobile_money_full_name:
+            return {
+                "source": "mobile_money",
+                "status": "not_available",
+                "message": "Nom CNI ou nom Mobile Money indisponible.",
+                "checked_fields": [],
+                "field_issues": [],
+            }
+
+        if ocr_full_name == mobile_money_full_name:
+            return {
+                "source": "mobile_money",
+                "status": "matched",
+                "message": "Nom CNI conforme au titulaire Mobile Money.",
+                "checked_fields": ["full_name"],
+                "field_issues": [],
+            }
+
+        return {
+            "source": "mobile_money",
+            "status": "mismatch",
+            "message": "Nom CNI différent du titulaire Mobile Money.",
+            "checked_fields": ["full_name"],
+            "field_issues": [
+                {
+                    "field": "full_name",
+                    "label": "Nom complet",
+                    "declared": ocr_full_name,
+                    "detected": mobile_money_full_name,
+                    "severity": "warning",
+                    "message": "Incoherence entre CNI OCR et titulaire Mobile Money.",
+                }
+            ],
+        }
 
     def _compare_source(
         self,

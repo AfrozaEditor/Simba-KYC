@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # Auth
     API_KEY: Optional[str] = None
     ALLOW_ANONYMOUS: bool = False
+    DASHBOARD_SESSION_SECRET: Optional[str] = None
+    DASHBOARD_COOKIE_NAME: str = "simba_dashboard_session"
+    DASHBOARD_BASE_URL: Optional[str] = None
+    GITHUB_OAUTH_CLIENT_ID: Optional[str] = None
+    GITHUB_OAUTH_CLIENT_SECRET: Optional[str] = None
 
     # Logging
     LOG_LEVEL: str = "INFO"
