@@ -15,7 +15,7 @@ from app.infrastructure.external.llm_factory import get_llm_router
 from app.core.config import settings
 from app.services.dashboard_events import dashboard_events
 from app.services.kyc_dashboard_store import get_kyc_dashboard_store
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 router = APIRouter()
@@ -265,7 +265,7 @@ async def analyze_kyc_upload(
             metadata=KYCMetadata(
                 device_id=device_id,
                 ip_address=ip_address,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 app_version=app_version
             )
         )
