@@ -186,3 +186,4 @@ pytest
 ```
 
 Les tests unitaires couvrent les regles QR/MRZ, le post-traitement OCR CNI, les criteres anti-fraude et les decisions KYC.
+
